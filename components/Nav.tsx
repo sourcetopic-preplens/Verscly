@@ -2,8 +2,14 @@
 import { usePathname, useRouter } from 'next/navigation'
 
 const tabs = [
+<<<<<<< Updated upstream
   { label: '🎯 Job Fit Analysis', href: '/analyze' },
   { label: '📊 Profile Score',    href: '/profile'  },
+=======
+  { label: 'Job Fit',      href: '/analyze' },
+  { label: 'Profile Score', href: '/profile' },
+  { label: 'Practice',     href: '/practice' },
+>>>>>>> Stashed changes
 ]
 
 export default function Nav() {

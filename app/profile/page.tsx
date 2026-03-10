@@ -389,7 +389,7 @@ export default function ProfilePage() {
   return (
     <div>
       <div className="hero">
-        <div className="hero-label">✦ Standalone resume intelligence — no JD needed</div>
+        <div className="hero-label">Standalone resume intelligence — no JD needed</div>
         <h1>Your <em>profile</em><br />score &amp; audit</h1>
         <p className="hero-sub">
           Upload just your resume. Get a deep audit of your profile strength, skill gaps
@@ -419,7 +419,7 @@ export default function ProfilePage() {
               />
             </div>
             <button className="primary-btn" onClick={handleAudit}>
-              ✦ Audit My Profile
+              Audit My Profile
             </button>
           </>
         )}

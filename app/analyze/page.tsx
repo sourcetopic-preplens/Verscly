@@ -310,7 +310,7 @@ export default function AnalyzePage() {
   return (
     <div>
       <div className="hero">
-        <div className="hero-label">✦ Beyond keyword matching — real capability assessment</div>
+        <div className="hero-label">Beyond keyword matching — real capability assessment</div>
         <h1>Can you <em>actually</em><br />do this job?</h1>
         <p className="hero-sub">
           Upload your resume and the job description. Verscly thinks like a senior hiring
@@ -337,7 +337,7 @@ export default function AnalyzePage() {
               />
             </div>
             <button className="primary-btn" onClick={handleAnalyze}>
-              ✦ Analyze My Real Fit
+              Analyze My Real Fit
             </button>
           </>
         )}
