@@ -4,6 +4,7 @@ import { usePathname, useRouter } from 'next/navigation'
 const tabs = [
   { label: '🎯 Job Fit Analysis', href: '/analyze' },
   { label: '📊 Profile Score',    href: '/profile'  },
+  { label: '🎙️ Interview Practice', href: '/practice' },
 ]
 
 export default function Nav() {

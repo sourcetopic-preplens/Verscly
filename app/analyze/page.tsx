@@ -1,5 +1,6 @@
 'use client'
 import { useState, useRef, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface Score        { label:string; value:number; description:string; color:string }
@@ -183,6 +184,7 @@ function QuestionsList({ items }: { items:Question[] }) {
 }
 
 function ResultsView({ d, onReset }: { d:AnalyzeResult; onReset:()=>void }) {
+  const router = useRouter()
   return (
     <div className="results-section">
       <VerdictBanner d={d} />
@@ -209,7 +211,27 @@ function ResultsView({ d, onReset }: { d:AnalyzeResult; onReset:()=>void }) {
         <p className="section-sub">Questions an interviewer would ask <em>this specific person</em> for <em>this specific role</em> — not generic templates.</p>
         <QuestionsList items={d.interviewQuestions} />
       </div>
-      <button className="retry-btn" onClick={onReset}>← Analyze Another Role</button>
+      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+        <button
+          className="primary-btn"
+          style={{ width: 'auto', padding: '12px 18px' }}
+          onClick={() => {
+            try {
+              localStorage.setItem('verscly:lastAnalyze', JSON.stringify({
+                overallScore: d.overallScore,
+                verdict: d.verdict,
+                verdictTitle: d.verdictTitle,
+                gaps: d.gaps,
+                interviewQuestions: d.interviewQuestions,
+              }))
+            } catch {}
+            router.push('/practice')
+          }}
+        >
+          🎙️ Practice these questions
+        </button>
+        <button className="retry-btn" onClick={onReset}>← Analyze Another Role</button>
+      </div>
     </div>
   )
 }
