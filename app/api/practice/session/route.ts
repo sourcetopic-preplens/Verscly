@@ -12,17 +12,26 @@ export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData()
     const resumeFile = formData.get('resume') as File | null
+    const resumeTextField = ((formData.get('resumeText') as string | null) ?? '').trim()
     const jdText = (formData.get('jdText') as string | null) ?? ''
     const jdFile = formData.get('jdFile') as File | null
     const targetRole = ((formData.get('targetRole') as string | null) ?? '').slice(0, 300)
+    const positionName = ((formData.get('positionName') as string | null) ?? '').trim().slice(0, 200)
+    const gapsFocus = ((formData.get('gapsFocus') as string | null) ?? '').trim().slice(0, 4000)
 
-    if (!resumeFile)
-      return NextResponse.json({ error: 'Resume file is required.' }, { status: 400 })
+    const hasFile = resumeFile && resumeFile.size > 0
+    let resumeText: string
+    if (hasFile) {
+      const resumeBuf = Buffer.from(await resumeFile.arrayBuffer())
+      resumeText = (await extractTextFromBuffer(resumeBuf, resumeFile.name)).slice(0, 15000)
+    } else if (resumeTextField.length >= 50) {
+      resumeText = resumeTextField.slice(0, 15000)
+    } else {
+      return NextResponse.json({ error: 'Resume file or resume text is required.' }, { status: 400 })
+    }
+
     if (!jdText && !jdFile)
       return NextResponse.json({ error: 'Job description is required.' }, { status: 400 })
-
-    const resumeBuf = Buffer.from(await resumeFile.arrayBuffer())
-    const resumeText = (await extractTextFromBuffer(resumeBuf, resumeFile.name)).slice(0, 15000)
 
     let finalJD = jdText
     if (!jdText && jdFile) {
@@ -33,7 +42,13 @@ export async function POST(req: NextRequest) {
     if (finalJD.length < 50)
       return NextResponse.json({ error: 'Job description is too short.' }, { status: 400 })
 
-    const roleCtx = targetRole ? `\nTARGET ROLE: ${targetRole}` : ''
+    const roleCtx = [targetRole && `TARGET ROLE: ${targetRole}`, positionName && `POSITION: ${positionName}`]
+      .filter(Boolean)
+      .join('\n')
+
+    const gapBlock = gapsFocus
+      ? `\nPRIORITY GAP TARGETING — prioritize Gap-probe, Technical, and Situational questions that stress-test these gaps; require candidates to show proof, metrics, and closure plans:\n${gapsFocus}\n`
+      : ''
 
     const prompt = `PRACTICE_SESSION
 
@@ -45,13 +60,13 @@ Goals:
 - Assess domain adaptability: can they work in the new environment/domain even without direct prior domain experience? Be honest and explain why.
 - Create a question ladder from EASY → HARD using JD responsibilities + candidate experience.
 - Mix question types: Behavioral, Experience, Situational, Technical, Gap-probe.
-
+${gapBlock}
 RESUME:
 ${resumeText}
 
 JOB DESCRIPTION:
 ${finalJD}
-${roleCtx}
+${roleCtx ? `\n${roleCtx}\n` : ''}
 
 Respond ONLY with valid JSON (no markdown, no backticks):
 
@@ -91,7 +106,7 @@ Respond ONLY with valid JSON (no markdown, no backticks):
   ]
 }
 
-Provide 12-18 questions with clear EASY→HARD progression.`
+Provide 12-18 questions with clear EASY→HARD progression. If PRIORITY GAP TARGETING is present, at least half the HARD questions must directly confront those gaps.`
 
     const raw = await callClaude(prompt, 4500)
     const result = safeParseJSON(raw)
@@ -101,4 +116,3 @@ Provide 12-18 questions with clear EASY→HARD progression.`
     return NextResponse.json({ error: message }, { status: 500 })
   }
 }
-

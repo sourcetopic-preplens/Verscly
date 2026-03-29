@@ -41,8 +41,11 @@ export async function callClaude(prompt: string, maxTokens = 4000): Promise<stri
 
 function mockClaude(prompt: string): string {
   if (prompt.includes('PRACTICE_SESSION')) {
+    const gapTitle = prompt.includes('PRIORITY GAP TARGETING')
+      ? 'Gap-targeted interview drill'
+      : 'Role readiness sprint'
     return JSON.stringify({
-      title: 'Premium Practice — Role Readiness Sprint',
+      title: gapTitle,
       candidateSnapshot: {
         name: 'Candidate',
         currentRole: 'Analyst / Specialist',
@@ -290,6 +293,31 @@ function mockClaude(prompt: string): string {
           howToAddress: 'Seek projects that require working with directors/VPs and document those examples.',
         },
       ],
+      transferableSkillsAnalysis: {
+        summary:
+          'Your background overlaps in execution and collaboration patterns, but the JD sits in a domain that will require deliberate translation of your prior context into new constraints, metrics, and operating rhythms.',
+        domainPivots: [
+          {
+            fromDomain: 'Prior industry / function (from resume)',
+            toDomain: 'Target domain implied by JD',
+            narrative:
+              'Many workflows differ in naming, but stakeholder alignment, prioritization, and delivery cadence translate when you re-map your tools and risk surface.',
+            transferStrength: 72,
+          },
+        ],
+        skillBridges: [
+          {
+            skill: 'Structured analysis & reporting',
+            howItTransfers: 'You already reason from messy inputs into decisions; the bridge is learning domain-specific definitions and success metrics.',
+            jdRelevance: 'Supports responsibilities that require turning ambiguity into an actionable plan.',
+          },
+          {
+            skill: 'Cross-team communication',
+            howItTransfers: 'Coalition-building transfers across domains; you must re-learn who the real decision-makers are.',
+            jdRelevance: 'Maps to collaboration-heavy JD themes and stakeholder management.',
+          },
+        ],
+      },
       interviewQuestions: [
         {
           question: 'Tell me about a time you owned a project where requirements changed mid‑flight. How did you adapt?',

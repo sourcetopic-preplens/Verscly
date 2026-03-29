@@ -98,7 +98,7 @@ Provide: 6 dimensions with 2-3 issues each, 3-5 skill categories with 4-6 skills
 
     const raw    = await callClaude(prompt, 4500)
     const result = safeParseJSON(raw)
-    return NextResponse.json({ success: true, data: result })
+    return NextResponse.json({ success: true, data: result, meta: { resumeText } })
 
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Analysis failed'

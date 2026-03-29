@@ -1,6 +1,20 @@
 'use client'
-import { useMemo, useRef, useState } from 'react'
+
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import {
+  Loader2,
+  MapPin,
+  Shuffle,
+  ChevronLeft,
+  ChevronRight,
+  User,
+  CircleDot,
+  CheckCircle2,
+  AlertCircle,
+} from 'lucide-react'
+import { useSession } from '@/context/SessionContext'
+import type { FlowGap } from '@/lib/flowTypes'
 
 type Difficulty = 'EASY' | 'MEDIUM' | 'HARD'
 type QType = 'Behavioral' | 'Technical' | 'Situational' | 'Experience' | 'Gap-probe'
@@ -58,146 +72,76 @@ function TypeChip({ t }: { t: QType }) {
   return <span className="type-chip">{t}</span>
 }
 
-function UploadBox({ label, sub, icon, inputRef }: {
-  label: string; sub: string; icon: string; inputRef: React.RefObject<HTMLInputElement>
-}) {
-  const [fileName, setFileName] = useState('')
-  const [hasFile, setHasFile] = useState(false)
-  const [drag, setDrag] = useState(false)
-  const mark = (file: File) => { setFileName(file.name); setHasFile(true) }
-
-  return (
-    <div
-      className={`upload-box${hasFile ? ' has-file' : ''}${drag ? ' dragover' : ''}`}
-      onClick={() => inputRef.current?.click()}
-      onDragOver={e => { e.preventDefault(); setDrag(true) }}
-      onDragLeave={() => setDrag(false)}
-      onDrop={e => {
-        e.preventDefault(); setDrag(false)
-        const f = e.dataTransfer.files[0]
-        if (f && inputRef.current) {
-          const dt = new DataTransfer(); dt.items.add(f)
-          inputRef.current.files = dt.files
-          mark(f)
-        }
-      }}
-    >
-      <div className="box-icon">{icon}</div>
-      <div className="box-label">{label}</div>
-      <div className="box-sub">{sub}</div>
-      {fileName && <div className="file-name" style={{ display: 'inline-block' }}>{fileName}</div>}
-      <input
-        ref={inputRef}
-        type="file"
-        accept=".pdf,.doc,.docx,.txt"
-        style={{ display: 'none' }}
-        onChange={e => { if (e.target.files?.[0]) mark(e.target.files[0]) }}
-      />
-    </div>
-  )
-}
-
 function LoadingView() {
-  const steps = [
-    { icon: '🧠', text: 'Reading your resume like a human' },
-    { icon: '📍', text: 'Checking location fit & constraints' },
-    { icon: '🔁', text: 'Assessing domain adaptability' },
-    { icon: '🎛️', text: 'Building an easy → hard ladder' },
-    { icon: '🎙️', text: 'Preparing premium interview drills' },
-  ]
   return (
-    <div style={{ textAlign: 'center', padding: '60px 40px' }}>
-      <div className="spinner-sm" />
-      <div className="loading-title">Building your premium practice set…</div>
-      <div className="loading-sub">NOT GENERIC QUESTIONS — PERSONALIZED TO YOU + THIS JD</div>
-      <div className="thinking-box">
-        <div className="thinking-label">COACHING PIPELINE</div>
-        {steps.map((s, i) => (
-          <div key={i} className="thinking-step active">
-            <div className="step-icon">{s.icon}</div>
-            {s.text}
-          </div>
-        ))}
-      </div>
+    <div className="linear-loading-center">
+      <Loader2 className="linear-page-spinner" size={44} strokeWidth={1.5} />
+      <div className="loading-title">Building gap-targeted practice</div>
+      <div className="loading-sub">Mapping your profile to this role and stress-testing weak signals.</div>
     </div>
   )
 }
 
 export default function PracticePage() {
   const router = useRouter()
-  const resumeRef = useRef<HTMLInputElement>(null)
-  const jdFileRef = useRef<HTMLInputElement>(null)
+  const { session, hydrated } = useSession()
 
-  const [jdText, setJdText] = useState('')
-  const [targetRole, setTargetRole] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-
-  const [session, setSession] = useState<PracticeSession | null>(null)
+  const [bootError, setBootError] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [sessionPractice, setSessionPractice] = useState<PracticeSession | null>(null)
   const [activeIdx, setActiveIdx] = useState(0)
   const [answer, setAnswer] = useState('')
   const [feedback, setFeedback] = useState<AnswerFeedback | null>(null)
   const [grading, setGrading] = useState(false)
+  const [error, setError] = useState('')
 
-  // stored for answer-eval endpoint (we only keep text, never the raw file)
-  const [resumeText, setResumeText] = useState('')
-  const [finalJD, setFinalJD] = useState('')
-
-  const lastAnalyze = useMemo(() => {
-    try {
-      const raw = localStorage.getItem('verscly:lastAnalyze')
-      return raw ? (JSON.parse(raw) as unknown) : null
-    } catch {
-      return null
+  useEffect(() => {
+    if (!hydrated) return
+    if (!session?.analysis || !session.resumeText || session.resumeText.length < 50 || !session.jdText || session.jdText.length < 50) {
+      router.replace('/')
     }
-  }, [])
+  }, [hydrated, session, router])
 
-  const activeQ = useMemo(() => session?.questions?.[activeIdx] ?? null, [session, activeIdx])
-
-  async function generateSession() {
-    const resumeFile = resumeRef.current?.files?.[0]
-    const jdFile = jdFileRef.current?.files?.[0]
-    if (!resumeFile) { setError('Please upload your resume.'); return }
-    if (!jdText && !jdFile) { setError('Please paste a job description or upload a JD file.'); return }
-
-    setError('')
+  useEffect(() => {
+    if (!hydrated || !session?.sessionId || !session.analysis || !session.resumeText || !session.jdText) return
+    let cancelled = false
+    setBootError('')
     setLoading(true)
-    setSession(null)
-    setFeedback(null)
-    setAnswer('')
-
-    try {
-      const fd = new FormData()
-      fd.append('resume', resumeFile)
-      if (jdText) fd.append('jdText', jdText)
-      if (jdFile) fd.append('jdFile', jdFile)
-      if (targetRole) fd.append('targetRole', targetRole)
-
-      const res = await fetch('/api/practice/session', { method: 'POST', body: fd })
-      const json = await res.json()
-      if (!res.ok || !json.success) throw new Error(json.error || 'Failed to generate practice session')
-
-      // server response contains the session; also returns extracted text? we derive via hidden fields below using a second fetch would be waste.
-      // To keep it simple and reliable, store the raw text in-memory by asking the server again is not ideal.
-      // Here we keep empty; answer feedback will still work with mocks; with real AI, resumeText/jdText helps.
-      setSession(json.data as PracticeSession)
-      setActiveIdx(0)
-      setFeedback(null)
-      setAnswer('')
-
-      // keep the JD text user provided; if they used a file upload only, evaluation context is limited, but still works.
-      setFinalJD(jdText || '[JD provided via file upload]')
-      setResumeText('[Resume provided via file upload]')
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Something went wrong. Please try again.')
-    } finally {
-      setLoading(false)
+    ;(async () => {
+      try {
+        const gaps = (session.analysis?.gaps || []) as FlowGap[]
+        const gapsLines = gaps.map(g => `- ${g.title} (${g.severity}): ${g.howToAddress}`).join('\n')
+        const fd = new FormData()
+        fd.append('resumeText', session.resumeText)
+        fd.append('jdText', session.jdText)
+        if (session.positionName) fd.append('positionName', session.positionName)
+        if (gapsLines) fd.append('gapsFocus', gapsLines)
+        const res = await fetch('/api/practice/session', { method: 'POST', body: fd })
+        const json = await res.json()
+        if (!res.ok || !json.success) throw new Error(json.error || 'Failed to generate practice session')
+        if (cancelled) return
+        setSessionPractice(json.data as PracticeSession)
+        setActiveIdx(0)
+        setAnswer('')
+        setFeedback(null)
+      } catch (e) {
+        if (!cancelled) setBootError(e instanceof Error ? e.message : 'Practice session failed.')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
     }
-  }
+  }, [hydrated, session?.sessionId])
 
   async function gradeAnswer() {
-    if (!activeQ) return
-    if (!answer.trim()) { setError('Write an answer first.'); return }
+    const q = sessionPractice?.questions[activeIdx]
+    if (!q || !session) return
+    if (!answer.trim()) {
+      setError('Write an answer first.')
+      return
+    }
     setError('')
     setFeedback(null)
     setGrading(true)
@@ -206,269 +150,282 @@ export default function PracticePage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          question: activeQ.question,
-          hint: activeQ.hint,
-          difficulty: activeQ.difficulty,
+          question: q.question,
+          hint: q.hint,
+          difficulty: q.difficulty,
           answer,
-          resumeText,
-          jdText: finalJD,
+          resumeText: session.resumeText,
+          jdText: session.jdText,
         }),
       })
       const json = await res.json()
       if (!res.ok || !json.success) throw new Error(json.error || 'Failed to grade answer')
       setFeedback(json.data as AnswerFeedback)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Something went wrong. Please try again.')
+      setError(e instanceof Error ? e.message : 'Something went wrong.')
     } finally {
       setGrading(false)
     }
   }
 
   function nextQ() {
-    if (!session) return
-    const next = Math.min(session.questions.length - 1, activeIdx + 1)
-    setActiveIdx(next)
+    if (!sessionPractice) return
+    setActiveIdx(Math.min(sessionPractice.questions.length - 1, activeIdx + 1))
     setAnswer('')
     setFeedback(null)
     setError('')
   }
 
   function prevQ() {
-    if (!session) return
-    const prev = Math.max(0, activeIdx - 1)
-    setActiveIdx(prev)
+    setActiveIdx(Math.max(0, activeIdx - 1))
     setAnswer('')
     setFeedback(null)
     setError('')
   }
 
-  if (session) {
-    const total = session.questions.length
-    const pct = total ? Math.round(((activeIdx + 1) / total) * 100) : 0
-
+  if (!hydrated || !session?.analysis) {
     return (
-      <div className="results-section">
-        <div className="section-card">
-          <div className="section-title"><div className="icon">🎙️</div>{session.title}</div>
-          <p className="section-sub">{session.practiceGuidance}</p>
+      <div className="section-wrap linear-loading-page">
+        <Loader2 className="linear-page-spinner" size={40} strokeWidth={1.5} />
+      </div>
+    )
+  }
 
-          <div className="practice-top">
-            <div className="practice-kv">
-              <div className="kv-label">CANDIDATE SNAPSHOT</div>
-              <div className="kv-title">{session.candidateSnapshot.name || 'Candidate'}</div>
-              <div className="kv-sub">
-                {session.candidateSnapshot.currentRole || '—'} · {session.candidateSnapshot.seniority || '—'}
-              </div>
-              <div className="kv-body">{session.candidateSnapshot.domainBackground || ''}</div>
-              <div className="kv-chips">
-                {(session.candidateSnapshot.coreSkills || []).slice(0, 8).map((s, i) => (
-                  <span key={i} className="skill-chip">{s}</span>
-                ))}
-              </div>
-            </div>
+  if (loading && !sessionPractice) {
+    return (
+      <div className="section-wrap">
+        <LoadingView />
+        {bootError ? <div className="error-box linear-error">{bootError}</div> : null}
+      </div>
+    )
+  }
 
-            <div className="practice-kv">
-              <div className="kv-label">LOCATION FIT</div>
-              <div className="kv-title">{session.locationFit.fit}</div>
-              <div className="kv-sub">
-                Candidate: {session.locationFit.candidateLocation} · Job: {session.locationFit.jobLocation}
-              </div>
-              <div className="kv-body">{session.locationFit.note}</div>
-            </div>
-
-            <div className="practice-kv">
-              <div className="kv-label">DOMAIN ADAPTABILITY</div>
-              <div className="kv-title">{session.adaptability.verdict}</div>
-              <div className="kv-body">{session.adaptability.why}</div>
-              <div className="mini-cols">
-                <div>
-                  <div className="mini-label">Transferable strengths</div>
-                  <ul className="mini-list">
-                    {(session.adaptability.transferableStrengths || []).slice(0, 4).map((x, i) => <li key={i}>{x}</li>)}
-                  </ul>
-                </div>
-                <div>
-                  <div className="mini-label">Risk factors</div>
-                  <ul className="mini-list">
-                    {(session.adaptability.riskFactors || []).slice(0, 4).map((x, i) => <li key={i}>{x}</li>)}
-                  </ul>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="section-card">
-          <div className="practice-progress">
-            <div className="pp-left">
-              <div className="pp-title">Question {activeIdx + 1} of {total}</div>
-              <div className="pp-sub">Difficulty ramps up as you progress.</div>
-            </div>
-            <div className="pp-right">
-              <div className="pp-pct">{pct}%</div>
-            </div>
-          </div>
-          <div className="progress-track">
-            <div className="progress-fill" style={{ width: `${pct}%` }} />
-          </div>
-
-          {activeQ && (
-            <div style={{ marginTop: '18px' }}>
-              {error && <div className="error-box">⚠ {error}</div>}
-              <div className="question-item" style={{ marginBottom: '14px' }}>
-                <div className="q-meta">
-                  <div className="q-num">Q{activeIdx + 1}</div>
-                  <div style={{ marginTop: '8px' }}>
-                    <DifficultyChip d={activeQ.difficulty} />
-                  </div>
-                  <div style={{ marginTop: '6px' }}>
-                    <TypeChip t={activeQ.type} />
-                  </div>
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div className="q-text">{activeQ.question}</div>
-                  <div className="q-hint">💡 Assessing: {activeQ.hint}</div>
-                  <div className="good-looks">
-                    <div className="gl-title">What good looks like</div>
-                    <ul className="gl-list">
-                      {(activeQ.whatGoodLooksLike || []).slice(0, 5).map((x, i) => <li key={i}>{x}</li>)}
-                    </ul>
-                  </div>
-                </div>
-              </div>
-
-              <div className="jd-box" style={{ marginBottom: '14px' }}>
-                <label>Your Answer <span>WRITE A REAL ANSWER — WE’LL GRADE IT</span></label>
-                <textarea
-                  value={answer}
-                  onChange={e => setAnswer(e.target.value)}
-                  placeholder="Write your answer here. Use STAR. Add metrics. Be concrete."
-                  style={{ minHeight: '170px' }}
-                />
-              </div>
-
-              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                <button className="primary-btn" style={{ width: 'auto', padding: '12px 18px' }} disabled={grading} onClick={gradeAnswer}>
-                  {grading ? 'Scoring…' : '✦ Score my answer'}
-                </button>
-                <button className="retry-btn" onClick={prevQ} disabled={activeIdx === 0}>← Previous</button>
-                <button className="retry-btn" onClick={nextQ} disabled={activeIdx === total - 1}>Next →</button>
-              </div>
-
-              {feedback && (
-                <div className="section-card" style={{ marginTop: '16px' }}>
-                  <div className="section-title"><div className="icon">✅</div>Feedback</div>
-                  <p className="section-sub">Honest, specific feedback plus a stronger version you can practice.</p>
-
-                  <div className="feedback-grid">
-                    <div className="fb-score">
-                      <div className="fb-score-num">{feedback.score}</div>
-                      <div className="fb-score-label">ANSWER SCORE</div>
-                    </div>
-                    <div className="fb-block">
-                      <div className="fb-title">Strengths</div>
-                      <ul className="fb-list">
-                        {(feedback.strengths || []).map((x, i) => <li key={i}>{x}</li>)}
-                      </ul>
-                    </div>
-                    <div className="fb-block">
-                      <div className="fb-title">Misses</div>
-                      <ul className="fb-list">
-                        {(feedback.misses || []).map((x, i) => <li key={i}>{x}</li>)}
-                      </ul>
-                    </div>
-                  </div>
-
-                  <div className="jd-box" style={{ marginTop: '14px' }}>
-                    <label>Improved Answer <span>STUDY THIS — THEN REWRITE IN YOUR VOICE</span></label>
-                    <textarea value={feedback.improvedAnswer || ''} readOnly style={{ minHeight: '170px' }} />
-                  </div>
-
-                  <div style={{ marginTop: '12px' }}>
-                    <div className="gl-title">Follow-ups you should be ready for</div>
-                    <ul className="gl-list">
-                      {(feedback.followUps || []).map((x, i) => <li key={i}>{x}</li>)}
-                    </ul>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        <button className="retry-btn" onClick={() => { setSession(null); setError(''); setAnswer(''); setFeedback(null) }}>
-          ← Create another practice set
-        </button>
-        <button className="retry-btn" style={{ marginLeft: '10px' }} onClick={() => router.push('/analyze')}>
-          ← Back to JD Fit Analysis
+  if (!sessionPractice) {
+    return (
+      <div className="section-wrap">
+        <div className="error-box linear-error">{bootError || 'Could not load practice.'}</div>
+        <button type="button" className="retry-btn" onClick={() => router.push('/profile-score')}>
+          Back to profile score
         </button>
       </div>
     )
   }
 
+  const total = sessionPractice.questions.length
+  const pct = total ? Math.round(((activeIdx + 1) / total) * 100) : 0
+  const activeQ = sessionPractice.questions[activeIdx] ?? null
+
   return (
-    <div>
-      <div className="hero">
-        <div className="hero-label">✦ Premium interview coaching from your real profile</div>
-        <h1>Interview<br /><em>practice</em></h1>
-        <p className="hero-sub">
-          Upload your resume and job description. Verscly will read you like a human, judge domain adaptability,
-          and generate an easy → hard question ladder tailored to this exact role.
+    <div className="results-section">
+      <header className="hero" style={{ paddingBottom: 16 }}>
+        <h1 style={{ fontSize: 'clamp(1.85rem,3.5vw,2.6rem)' }}>
+          Interview <em>prepare</em>
+        </h1>
+        <p className="hero-sub" style={{ maxWidth: 520 }}>
+          Gap-led questions from your profile score and this job description.
         </p>
+      </header>
+
+      <div className="section-card">
+        <div className="section-title linear-section-title">
+          <span className="icon linear-lucide-icon">
+            <CircleDot size={20} strokeWidth={2} />
+          </span>
+          {sessionPractice.title}
+        </div>
+        <p className="section-sub">{sessionPractice.practiceGuidance}</p>
+
+        <div className="practice-top">
+          <div className="practice-kv">
+            <div className="kv-label">Snapshot</div>
+            <div className="kv-title">{sessionPractice.candidateSnapshot.name || 'Candidate'}</div>
+            <div className="kv-sub">
+              {sessionPractice.candidateSnapshot.currentRole || '—'} · {sessionPractice.candidateSnapshot.seniority || '—'}
+            </div>
+            <div className="kv-body">{sessionPractice.candidateSnapshot.domainBackground || ''}</div>
+            <div className="kv-chips">
+              {(sessionPractice.candidateSnapshot.coreSkills || []).slice(0, 8).map((s, i) => (
+                <span key={i} className="skill-chip">
+                  {s}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <div className="practice-kv">
+            <div className="kv-label">Location</div>
+            <div className="kv-title linear-kv-fit">
+              <MapPin size={16} strokeWidth={2} />
+              {sessionPractice.locationFit.fit}
+            </div>
+            <div className="kv-sub">
+              {sessionPractice.locationFit.candidateLocation} · {sessionPractice.locationFit.jobLocation}
+            </div>
+            <div className="kv-body">{sessionPractice.locationFit.note}</div>
+          </div>
+
+          <div className="practice-kv">
+            <div className="kv-label">Adaptability</div>
+            <div className="kv-title linear-kv-fit">
+              <Shuffle size={16} strokeWidth={2} />
+              {sessionPractice.adaptability.verdict}
+            </div>
+            <div className="kv-body">{sessionPractice.adaptability.why}</div>
+            <div className="mini-cols">
+              <div>
+                <div className="mini-label">Transferable</div>
+                <ul className="mini-list">
+                  {(sessionPractice.adaptability.transferableStrengths || []).slice(0, 4).map((x, i) => (
+                    <li key={i}>{x}</li>
+                  ))}
+                </ul>
+              </div>
+              <div>
+                <div className="mini-label">Risks</div>
+                <ul className="mini-list">
+                  {(sessionPractice.adaptability.riskFactors || []).slice(0, 4).map((x, i) => (
+                    <li key={i}>{x}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div className="section-wrap">
-        {loading ? (
-          <LoadingView />
-        ) : (
-          <>
-            {error && <div className="error-box">⚠ {error}</div>}
-            {lastAnalyze && (
-              <div className="section-card">
-                <div className="section-title"><div className="icon">🧠</div>From your last JD analysis</div>
-                <p className="section-sub">
-                  If you just came from Job Fit Analysis, your key gaps and questions are remembered here.
-                  Upload your resume + JD to generate a full premium practice session.
-                </p>
+      <div className="section-card">
+        <div className="practice-progress">
+          <div className="pp-left">
+            <div className="pp-title">
+              Question {activeIdx + 1} of {total}
+            </div>
+            <div className="pp-sub">Difficulty ramps across the set.</div>
+          </div>
+          <div className="pp-right">
+            <div className="pp-pct">{pct}%</div>
+          </div>
+        </div>
+        <div className="progress-track">
+          <div className="progress-fill" style={{ width: `${pct}%` }} />
+        </div>
+
+        {activeQ && (
+          <div style={{ marginTop: '18px' }}>
+            {error ? (
+              <div className="error-box linear-error">
+                <AlertCircle size={16} strokeWidth={2} className="linear-error-icon" />
+                {error}
               </div>
-            )}
-            <div className="two-col">
-              <UploadBox label="Your Resume" sub="PDF, DOCX, or TXT" icon="📄" inputRef={resumeRef} />
-              <UploadBox label="Job Description File" sub="Optional — upload or paste below" icon="💼" inputRef={jdFileRef} />
+            ) : null}
+            <div className="question-item" style={{ marginBottom: '14px' }}>
+              <div className="q-meta">
+                <div className="q-num">Q{activeIdx + 1}</div>
+                <div style={{ marginTop: '8px' }}>
+                  <DifficultyChip d={activeQ.difficulty} />
+                </div>
+                <div style={{ marginTop: '6px' }}>
+                  <TypeChip t={activeQ.type} />
+                </div>
+              </div>
+              <div style={{ flex: 1 }}>
+                <div className="q-text">{activeQ.question}</div>
+                <div className="q-hint linear-hint">
+                  <User size={13} strokeWidth={2} />
+                  Assessing: {activeQ.hint}
+                </div>
+                <div className="good-looks">
+                  <div className="gl-title">What good looks like</div>
+                  <ul className="gl-list">
+                    {(activeQ.whatGoodLooksLike || []).slice(0, 5).map((x, i) => (
+                      <li key={i}>{x}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
             </div>
 
-            <div className="jd-box">
-              <label>Job Description <span>PASTE TEXT OR UPLOAD FILE ABOVE</span></label>
+            <div className="jd-box" style={{ marginBottom: '14px' }}>
+              <label>
+                Your answer <span className="linear-label-hint">graded against your resume and JD</span>
+              </label>
               <textarea
-                value={jdText}
-                onChange={e => setJdText(e.target.value)}
-                placeholder="Paste the full job description here — responsibilities, requirements, qualifications..."
+                value={answer}
+                onChange={e => setAnswer(e.target.value)}
+                placeholder="Structured answer: situation, actions, outcomes, metrics."
+                style={{ minHeight: '170px' }}
               />
             </div>
 
-            <div className="jd-box" style={{ marginTop: '16px' }}>
-              <label>Target Role / Industry <span>OPTIONAL — HELPS DIFFICULTY + DOMAIN CALIBRATION</span></label>
-              <textarea
-                value={targetRole}
-                onChange={e => setTargetRole(e.target.value)}
-                placeholder="e.g. 'Risk analyst moving from banking → fintech' or 'Backend engineer targeting ML infra'..."
-                style={{ minHeight: '90px' }}
-              />
-            </div>
-
-            <button className="primary-btn" onClick={generateSession}>
-              ✦ Generate Premium Practice Set
-            </button>
-
-            <div style={{ marginTop: '12px' }}>
-              <button className="retry-btn" onClick={() => router.push('/analyze')}>
-                ← Back to JD Fit Analysis
+            <div className="linear-action-row">
+              <button type="button" className="primary-btn linear-btn-inline" disabled={grading} onClick={gradeAnswer}>
+                {grading ? <Loader2 className="linear-btn-spinner" size={18} strokeWidth={2} /> : null}
+                {grading ? 'Scoring' : 'Score answer'}
+              </button>
+              <button type="button" className="retry-btn linear-icon-btn" onClick={prevQ} disabled={activeIdx === 0}>
+                <ChevronLeft size={18} strokeWidth={2} />
+                Previous
+              </button>
+              <button type="button" className="retry-btn linear-icon-btn" onClick={nextQ} disabled={activeIdx === total - 1}>
+                Next
+                <ChevronRight size={18} strokeWidth={2} />
               </button>
             </div>
-          </>
+
+            {feedback && (
+              <div className="section-card" style={{ marginTop: '16px' }}>
+                <div className="section-title linear-section-title">
+                  <span className="icon linear-lucide-icon">
+                    <CheckCircle2 size={20} strokeWidth={2} />
+                  </span>
+                  Feedback
+                </div>
+                <p className="section-sub">Specific coaching plus a stronger answer template.</p>
+
+                <div className="feedback-grid">
+                  <div className="fb-score">
+                    <div className="fb-score-num">{feedback.score}</div>
+                    <div className="fb-score-label">Score</div>
+                  </div>
+                  <div className="fb-block">
+                    <div className="fb-title">Strengths</div>
+                    <ul className="fb-list">
+                      {(feedback.strengths || []).map((x, i) => (
+                        <li key={i}>{x}</li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div className="fb-block">
+                    <div className="fb-title">Misses</div>
+                    <ul className="fb-list">
+                      {(feedback.misses || []).map((x, i) => (
+                        <li key={i}>{x}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+
+                <div className="jd-box" style={{ marginTop: '14px' }}>
+                  <label>Improved answer</label>
+                  <textarea value={feedback.improvedAnswer || ''} readOnly style={{ minHeight: '170px' }} />
+                </div>
+
+                <div style={{ marginTop: '12px' }}>
+                  <div className="gl-title">Follow-ups</div>
+                  <ul className="gl-list">
+                    {(feedback.followUps || []).map((x, i) => (
+                      <li key={i}>{x}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
+          </div>
         )}
       </div>
+
+      <button type="button" className="retry-btn" onClick={() => router.push('/profile-score')}>
+        Back to profile score
+      </button>
     </div>
   )
 }
-

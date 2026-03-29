@@ -10,18 +10,31 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Too many requests — wait 1 minute.' }, { status: 429 })
 
   try {
-    const formData  = await req.formData()
+    const formData = await req.formData()
     const resumeFile = formData.get('resume') as File | null
-    const jdText     = (formData.get('jdText') as string | null) ?? ''
-    const jdFile     = formData.get('jdFile') as File | null
+    const resumeTextField = ((formData.get('resumeText') as string | null) ?? '').trim()
+    const useStored = formData.get('useStoredResume') === '1'
+    const jdText = (formData.get('jdText') as string | null) ?? ''
+    const jdFile = formData.get('jdFile') as File | null
+    const positionName = ((formData.get('positionName') as string | null) ?? '').trim().slice(0, 200)
+    const roleLine = positionName ? `\nTARGET POSITION: ${positionName}\n` : ''
 
-    if (!resumeFile)
-      return NextResponse.json({ error: 'Resume file is required.' }, { status: 400 })
     if (!jdText && !jdFile)
       return NextResponse.json({ error: 'Job description is required.' }, { status: 400 })
 
-    const resumeBuf  = Buffer.from(await resumeFile.arrayBuffer())
-    const resumeText = (await extractTextFromBuffer(resumeBuf, resumeFile.name)).slice(0, 15000)
+    let resumeText: string
+    const hasFile = resumeFile && resumeFile.size > 0
+    if (hasFile) {
+      const resumeBuf = Buffer.from(await resumeFile.arrayBuffer())
+      resumeText = (await extractTextFromBuffer(resumeBuf, resumeFile.name)).slice(0, 15000)
+    } else if (useStored && resumeTextField.length >= 50) {
+      resumeText = resumeTextField.slice(0, 15000)
+    } else {
+      return NextResponse.json({ error: 'Resume file is required.' }, { status: 400 })
+    }
+
+    if (resumeText.length < 50)
+      return NextResponse.json({ error: 'Resume text is too short.' }, { status: 400 })
 
     let finalJD = jdText
     if (!jdText && jdFile) {
@@ -34,14 +47,14 @@ export async function POST(req: NextRequest) {
 
     const prompt = `You are a senior hiring manager with 20+ years of experience. Make a REAL human assessment of whether this person can do this job — not keyword matching, but genuine capability analysis.
 
-Consider: actual work done, transferable skills, domain knowledge, learning trajectory, career arc.
+Consider: actual work done, transferable skills, domain knowledge, learning trajectory, career arc. Pay special attention to cross-domain pivots (e.g. traditional banking → fintech, agency → in-house product, retail ops → SaaS CS): name the domains explicitly and map which skills transfer, how, and what is different.
 
 RESUME:
 ${resumeText}
 
 JOB DESCRIPTION:
 ${finalJD}
-
+${roleLine}
 Respond ONLY with valid JSON, no markdown, no backticks:
 
 {
@@ -55,6 +68,15 @@ Respond ONLY with valid JSON, no markdown, no backticks:
     {"label": "Gap Severity", "value": <0-100, 100=tiny gap>, "description": "<learning required>", "color": "#F59E0B"},
     {"label": "Domain Fit", "value": <0-100>, "description": "<industry/culture fit>", "color": "#6366F1"}
   ],
+  "transferableSkillsAnalysis": {
+    "summary": "<2-4 sentences on how resume background bridges to THIS JD, including domain pivot if any>",
+    "domainPivots": [
+      {"fromDomain": "<from resume>", "toDomain": "<from JD>", "narrative": "<concrete bridge>", "transferStrength": <0-100>}
+    ],
+    "skillBridges": [
+      {"skill": "<resume skill>", "howItTransfers": "<mechanism>", "jdRelevance": "<maps to which JD responsibility/theme>"}
+    ]
+  },
   "capabilities": [
     {"title": "<JD responsibility>", "status": "<READY|PARTIAL|TRANSFERABLE|GAP>", "evidence": "<specific evidence from resume OR gap explanation>", "confidence": <0-100>}
   ],
@@ -70,12 +92,11 @@ Respond ONLY with valid JSON, no markdown, no backticks:
   "interviewQuestions": [{"question": "<specific question for THIS person for THIS role>", "type": "<Behavioral|Technical|Situational|Experience|Gap-probe>", "hint": "<what interviewer is assessing>"}]
 }
 
-Provide 5-7 capabilities, 3-5 strengths, 3-5 gaps, 6-8 questions. Be honest and specific.`
+Provide 5-7 capabilities, 3-5 strengths, 3-5 gaps, 6-8 questions, 1-3 domainPivots, 4-8 skillBridges. Be honest and specific.`
 
-    const raw    = await callClaude(prompt)
+    const raw = await callClaude(prompt)
     const result = safeParseJSON(raw)
-    return NextResponse.json({ success: true, data: result })
-
+    return NextResponse.json({ success: true, data: result, meta: { resumeText } })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Analysis failed'
     return NextResponse.json({ error: message }, { status: 500 })
